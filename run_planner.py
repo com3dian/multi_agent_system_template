@@ -46,14 +46,13 @@ def main():
         print(f"\nWarning: Source data not found at {SOURCE_DATA}")
         print("Creating a sample dataset for demo...")
         os.makedirs("./data", exist_ok=True)
-        import pandas as pd
-        sample_df = pd.DataFrame({
-            "id": [1, 2, 3, 4, 5],
-            "name": ["Alice", "Bob", "Charlie", "Diana", "Eve"],
-            "age": [25, 30, 35, 28, 32],
-            "city": ["NYC", "LA", "Chicago", "NYC", "Boston"]
-        })
-        sample_df.to_csv(SOURCE_DATA, index=False)
+        with open(SOURCE_DATA, "w", encoding="utf-8") as f:
+            f.write("id,name,age,city\n")
+            f.write("1,Alice,25,NYC\n")
+            f.write("2,Bob,30,LA\n")
+            f.write("3,Charlie,35,Chicago\n")
+            f.write("4,Diana,28,NYC\n")
+            f.write("5,Eve,32,Boston\n")
         print(f"Sample dataset created at {SOURCE_DATA}")
 
     # Initialize and run

@@ -1,63 +1,27 @@
 """
-ExecutionContext Base Classes and Models.
+ExecutionContext base classes and models.
 
-This module defines the abstract base class for all execution contexts and
-common data models used across the system.
-
-The ExecutionContext abstraction provides a unified interface for the "world"
-in which the agents operate. This can be:
-- A structured data source (database, CSVs)
-- A codebase (file system)
-- An API
-- A website
-- etc.
+This module defines the generic abstraction for the environment in which
+agents operate. A context may represent a codebase, directory tree, API,
+website, terminal workspace, operating system surface, or any other resource
+collection a project wants to expose.
 """
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional, Union
-
-import pandas as pd
+from typing import Any, Dict, Iterator, List, Optional
 
 
 class ContextType(str, Enum):
     """Enumeration of supported execution context types."""
 
-    CSV = "csv"
-    PARQUET = "parquet"
-    JSON = "json"
-    SQLITE = "sqlite"
+    DATABASE = "database"
     DIRECTORY = "directory"
     API = "api"
     WEBSITE = "website"
+    SYSTEM = "system"
     UNKNOWN = "unknown"
-
-
-@dataclass
-class FieldInfo:
-    """Information about a single field within a resource."""
-
-    name: str
-    dtype: str
-    nullable: bool = True
-    is_primary_key: bool = False
-    is_foreign_key: bool = False
-    foreign_key_reference: Optional[str] = None  # "resource.field" format
-    description: Optional[str] = None
-    sample_values: List[Any] = field(default_factory=list)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "name": self.name,
-            "dtype": self.dtype,
-            "nullable": self.nullable,
-            "is_primary_key": self.is_primary_key,
-            "is_foreign_key": self.is_foreign_key,
-            "foreign_key_reference": self.foreign_key_reference,
-            "description": self.description,
-            "sample_values": self.sample_values[:5],
-        }
 
 
 @dataclass
@@ -65,54 +29,20 @@ class ResourceInfo:
     """Information about a single resource in the execution context."""
 
     name: str
-    item_count: Optional[int] = None  # e.g., row_count
-    field_count: Optional[int] = None  # e.g., column_count
-    fields: List[FieldInfo] = field(default_factory=list)
-    primary_key: Optional[str] = None
-    location: Optional[str] = None  # For file-based or URL-based resources
+    location: Optional[str] = None
     size_in_bytes: Optional[int] = None
     description: Optional[str] = None
-
-    @property
-    def field_names(self) -> List[str]:
-        return [f.name for f in self.fields]
+    resource_type: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "name": self.name,
-            "item_count": self.item_count,
-            "field_count": self.field_count,
-            "fields": [f.to_dict() for f in self.fields],
-            "primary_key": self.primary_key,
             "location": self.location,
             "size_in_bytes": self.size_in_bytes,
             "description": self.description,
-        }
-
-
-@dataclass
-class RelationshipInfo:
-    """Information about a relationship between resources."""
-
-    from_resource: str
-    from_field: str
-    to_resource: str
-    to_field: str
-    relationship_type: str  # "one-to-one", "one-to-many", "many-to-many"
-    confidence: float = 0.0
-    is_verified: bool = False
-    description: Optional[str] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "from_resource": self.from_resource,
-            "from_field": self.from_field,
-            "to_resource": self.to_resource,
-            "to_field": self.to_field,
-            "relationship_type": self.relationship_type,
-            "confidence": self.confidence,
-            "is_verified": self.is_verified,
-            "description": self.description,
+            "resource_type": self.resource_type,
+            "metadata": self.metadata,
         }
 
 
@@ -126,7 +56,6 @@ class ExecutionContext(ABC):
         self._name = name
         self._description = description
         self._resource_cache: Dict[str, ResourceInfo] = {}
-        self._relationship_cache: Optional[List[RelationshipInfo]] = None
 
     @property
     @abstractmethod
@@ -146,21 +75,13 @@ class ExecutionContext(ABC):
         pass
 
     @abstractmethod
-    def read_resource(
-        self,
-        resource: str,
-        fields: Optional[List[str]] = None,
-        limit: Optional[int] = None,
-        **kwargs,
-    ) -> pd.DataFrame:
-        """Read a resource into a pandas DataFrame."""
+    def read_resource(self, resource: str, **kwargs) -> Any:
+        """Read a resource and return a context-specific representation."""
         pass
 
     @abstractmethod
-    def iter_resource(
-        self, resource: str, chunksize: int = 10000, **kwargs
-    ) -> Iterator[pd.DataFrame]:
-        """Iterate over a resource in chunks."""
+    def iter_resource(self, resource: str, **kwargs) -> Iterator[Any]:
+        """Iterate over items from a resource using a context-specific strategy."""
         pass
 
     @property
@@ -205,25 +126,7 @@ class ExecutionContext(ABC):
                 name: info.to_dict()
                 for name, info in self.get_all_resource_info().items()
             },
-            "relationships": [r.to_dict() for r in self.get_relationships()],
         }
-
-    def get_relationships(self) -> List[RelationshipInfo]:
-        if self._relationship_cache is None:
-            self._relationship_cache = self._discover_relationships()
-        return self._relationship_cache
-
-    def _discover_relationships(self) -> List[RelationshipInfo]:
-        return []
-
-    def get_field_values(
-        self, resource: str, field: str, limit: Optional[int] = None
-    ) -> List[Any]:
-        df = self.read_resource(resource, fields=[field])
-        values = df[field].dropna().unique().tolist()
-        if limit:
-            return values[:limit]
-        return values
 
     def validate(self) -> bool:
         if not self.resources:

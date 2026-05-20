@@ -11,8 +11,9 @@ it can use to accomplish tasks.
 
 Uses the unified ExecutionContext abstraction for all data access.
 """
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union, Type
 
+from pydantic import BaseModel
 from langchain_core.tools import BaseTool
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
@@ -390,8 +391,9 @@ while maintaining accuracy and your analytical perspective.""")
     def synthesize_results(
         self,
         task: str,
-        all_results: List[Dict[str, Any]]
-    ) -> str:
+        all_results: List[Dict[str, Any]],
+        output_schema: Optional[Type[BaseModel]] = None
+    ) -> Union[str, BaseModel]:
         """
         Synthesize multiple results into a consolidated output.
         Uses this player's role/expertise to consolidate debate results.
@@ -399,10 +401,27 @@ while maintaining accuracy and your analytical perspective.""")
         Args:
             task: The task that was worked on
             all_results: List of results from all players
+            output_schema: Optional Pydantic model class for structured output.
+                          If provided, returns a validated Pydantic model instance.
+                          If None, returns a string (legacy behavior).
             
         Returns:
-            Synthesized result as a string
+            Synthesized result as a string or Pydantic model instance
         """
+        results_str = "\n\n".join([
+            f"=== {r.get('player', 'Unknown')} ===\n{r.get('analysis', str(r))}"
+            for r in all_results
+        ])
+        
+        if output_schema is not None:
+            # Use structured output with Pydantic schema
+            return self._synthesize_structured(task, results_str, output_schema)
+        else:
+            # Legacy string output
+            return self._synthesize_string(task, results_str)
+    
+    def _synthesize_string(self, task: str, results_str: str) -> str:
+        """Synthesize results as a string (legacy behavior)."""
         prompt = ChatPromptTemplate.from_messages([
             ("system", f"""You are {self.name}. {self.role_prompt}
 
@@ -429,10 +448,48 @@ Provide the consolidated result for this task. Output only the result, no commen
         
         chain = prompt | self.llm | self._output_parser
         
-        results_str = "\n\n".join([
-            f"=== {r.get('player', 'Unknown')} ===\n{r.get('analysis', str(r))}"
-            for r in all_results
+        return chain.invoke({
+            "task": task,
+            "all_results": results_str
+        })
+    
+    def _synthesize_structured(
+        self, 
+        task: str, 
+        results_str: str, 
+        output_schema: Type[BaseModel]
+    ) -> BaseModel:
+        """
+        Synthesize results into a structured Pydantic model.
+        
+        Uses LangChain's with_structured_output() for guaranteed schema compliance.
+        """
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", f"""You are {self.name}. {self.role_prompt}
+
+You are synthesizing results from multiple analysts into a structured format.
+
+**Your job:**
+- Extract and consolidate all relevant information from the analyses
+- Fill in ALL fields in the schema with concrete values from the gathered information
+- Use null/None for fields where information is truly unavailable
+- Resolve conflicts by choosing the most accurate/complete information
+
+**CRITICAL:**
+- Output MUST conform exactly to the provided schema
+- Use actual values, not placeholders like "..." 
+- Be specific and concrete"""),
+            ("human", """Task: {task}
+
+Results from all analysts:
+{all_results}
+
+Generate the final structured output.""")
         ])
+        
+        # Use with_structured_output for guaranteed schema compliance
+        structured_llm = self.llm.with_structured_output(output_schema)
+        chain = prompt | structured_llm
         
         return chain.invoke({
             "task": task,

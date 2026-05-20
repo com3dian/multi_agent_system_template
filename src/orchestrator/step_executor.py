@@ -11,7 +11,9 @@ The execution flow is:
     execute_parallel → critique → revise → [loop or synthesize]
 """
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Type
+
+from pydantic import BaseModel
 
 from langgraph.graph import StateGraph, END
 
@@ -50,7 +52,7 @@ def execute_parallel_node(state: StepExecutionState) -> Dict[str, Any]:
                 context_info=context_info,
                 workspace=workspace,
                 inputs=input_mappings,
-                target_resources=target_resources
+                target_tables=target_resources
             )
             
             player_results.append({
@@ -194,6 +196,9 @@ def revise_node(state: StepExecutionState) -> Dict[str, Any]:
 def synthesize_node(state: StepExecutionState) -> Dict[str, Any]:
     """
     Synthesize all player results into a consolidated output.
+    
+    If output_schema is provided in state, uses structured output
+    to return a validated Pydantic model instead of a string.
     """
     logging.info(f"--- STEP {state['step_index']}: SYNTHESIS ---")
     
@@ -201,6 +206,10 @@ def synthesize_node(state: StepExecutionState) -> Dict[str, Any]:
     task = state["task"]
     player_results = state["player_results"]
     expected_outputs = state["expected_outputs"]
+    output_schema: Optional[Type[BaseModel]] = state.get("output_schema")
+    
+    if output_schema:
+        logging.info(f"  Using structured output with schema: {output_schema.__name__}")
     
     try:
         results_for_synthesis = [
@@ -214,14 +223,27 @@ def synthesize_node(state: StepExecutionState) -> Dict[str, Any]:
         
         consolidated = synthesizer.synthesize_results(
             task=task,
-            all_results=results_for_synthesis
+            all_results=results_for_synthesis,
+            output_schema=output_schema
         )
+        
+        if output_schema and isinstance(consolidated, BaseModel):
+            artifact_value = consolidated.model_dump(by_alias=True)
+        else:
+            artifact_value = consolidated
         
         produced_artifacts = {}
         for output_name in expected_outputs:
-            produced_artifacts[output_name] = consolidated
+            produced_artifacts[output_name] = artifact_value
         
         logging.info(f"  Synthesis complete. Produced artifacts: {list(produced_artifacts.keys())}")
+        if isinstance(artifact_value, dict):
+            preview = str(artifact_value)[:200].replace('\n', ' ')
+        else:
+            preview = str(artifact_value)[:200].replace('\n', ' ')
+        if len(str(artifact_value)) > 200:
+            preview += "..."
+        logging.info(f"    Synthesized output: {preview}")
         
         return {
             "consolidated_result": consolidated,
@@ -315,7 +337,8 @@ def create_step_state(
     workspace: Dict[str, Any],
     players_per_step: int,
     debate_rounds: int,
-    player_pool: List[str]
+    player_pool: List[str],
+    output_schema: Optional[Type[BaseModel]] = None
 ) -> StepExecutionState:
     """
     Create the initial state for executing a step.
@@ -348,6 +371,7 @@ def create_step_state(
         current_debate_round=0,
         player_results=[],
         debate_log=[],
+        output_schema=output_schema,
         consolidated_result=None,
         produced_artifacts={},
         error=None,

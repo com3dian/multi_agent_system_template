@@ -2,17 +2,17 @@
 Main entry point for the Metadata Agent application.
 
 This script uses the Orchestrator with planning + parallel execution + debate
-to extract metadata from datasets.
+to extract structured outputs from datasets.
 
 Example Usage:
     # Single CSV file
-    python -m src.main --source ./data/my_data.csv --topology default
+    python -m src.main --source ./data/my_data.csv --topology default --objective "Profile this dataset"
     
     # Directory of CSVs
-    python -m src.main --source ./data/my_dataset/ --topology default
+    python -m src.main --source ./data/my_dataset/ --topology default --objective-file ./objective.txt
     
     # SQLite database
-    python -m src.main --source ./data/mydb.sqlite --metadata-standard relational
+    python -m src.main --source ./data/mydb.sqlite --objective "Generate relational metadata and key relationships"
 """
 import argparse
 import logging
@@ -23,28 +23,27 @@ from pprint import pprint
 # Add the project root to the Python path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from src.standards import METADATA_STANDARDS
 from src.topology import EXECUTION_TOPOLOGIES
 from src.orchestrator import Orchestrator
-from src.datasource import create_datasource
+from src.context import create_context
+from src.config import DEFAULT_OBJECTIVE
 
 
-def load_metadata_standard(standard_arg: str) -> str:
-    """
-    Loads the metadata standard content.
+def load_objective(objective: str = "", objective_file: str = "") -> str:
+    """Resolve objective text from direct input or a file."""
+    if objective and objective.strip():
+        return objective.strip()
 
-    It first checks if the argument is a key in the predefined METADATA_STANDARDS.
-    If not, it assumes the argument is a file path and tries to read it.
-    """
-    if standard_arg in METADATA_STANDARDS:
-        return METADATA_STANDARDS[standard_arg]
-    elif os.path.exists(standard_arg):
-        with open(standard_arg, 'r') as f:
-            return f.read()
-    else:
-        raise ValueError(
-            f"Metadata standard '{standard_arg}' not found as a predefined standard or as a valid file path."
-        )
+    if objective_file:
+        if not os.path.exists(objective_file):
+            raise ValueError(f"Objective file not found: {objective_file}")
+        with open(objective_file, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+        if not content:
+            raise ValueError(f"Objective file is empty: {objective_file}")
+        return content
+
+    return DEFAULT_OBJECTIVE
 
 
 def main():
@@ -52,7 +51,7 @@ def main():
     Main function to run the metadata agent.
     """
     parser = argparse.ArgumentParser(
-        description="Run metadata extraction using multi-agent orchestration."
+        description="Run objective-driven analysis using multi-agent orchestration."
     )
     
     # Required arguments
@@ -71,7 +70,7 @@ def main():
         "--name",
         type=str,
         default="dataset",
-        help="Name for the dataset (used in metadata output)."
+        help="Name for the context (used in logs/output)."
     )
     parser.add_argument(
         "--topology",
@@ -81,13 +80,16 @@ def main():
         help="The execution topology to use (defines parallelism and debate rounds)."
     )
     parser.add_argument(
-        "--metadata-standard",
+        "--objective",
         type=str,
-        default="basic",
-        help=(
-            "The name of a predefined metadata standard "
-            "(e.g., 'basic', 'dublin_core', 'relational') or a file path."
-        )
+        default="",
+        help="Natural-language objective for the planner.",
+    )
+    parser.add_argument(
+        "--objective-file",
+        type=str,
+        default="",
+        help="Path to a text file containing the objective.",
     )
     parser.add_argument(
         "--log-level",
@@ -110,37 +112,37 @@ def main():
         logging.error(f"Source not found: {args.source}")
         return
     
-    # Create DataSource to get info for logging
+    # Create ExecutionContext to get info for logging
     try:
-        datasource = create_datasource(args.source, name=args.name)
+        context = create_context(args.source, name=args.name)
     except Exception as e:
-        logging.error(f"Failed to create DataSource: {e}")
+        logging.error(f"Failed to create context: {e}")
         return
     
     logging.info("=" * 60)
     logging.info("METADATA AGENT")
     logging.info("=" * 60)
     logging.info(f"Source: {args.source}")
-    logging.info(f"Dataset Name: {datasource.name}")
-    logging.info(f"Source Type: {datasource.source_type.value}")
-    logging.info(f"Tables: {datasource.tables}")
-    logging.info(f"Multi-table: {datasource.is_multi_table}")
+    logging.info(f"Context Name: {context.name}")
+    logging.info(f"Context Type: {context.context_type.value}")
+    logging.info(f"Resources: {context.resources}")
+    logging.info(f"Multi-resource: {context.is_multi_resource}")
     logging.info(f"Topology: {args.topology}")
-    logging.info(f"Metadata Standard: {args.metadata_standard}")
     logging.info("=" * 60)
     
     try:
-        metadata_standard_content = load_metadata_standard(args.metadata_standard)
+        objective = load_objective(args.objective, args.objective_file)
     except ValueError as e:
         logging.error(str(e))
         return
-    
+    logging.info(f"Objective: {objective}")
+
     # Initialize and run the orchestrator
     orchestrator = Orchestrator(topology_name=args.topology)
     
     result = orchestrator.run(
-        source=datasource,
-        metadata_standard=metadata_standard_content
+        source=context,
+        objective=objective,
     )
     
     if result is None:
@@ -168,9 +170,9 @@ def main():
         preview = str(value)[:100] if value else "None"
         print(f"  {name}: {preview}...")
     
-    if result.final_metadata:
-        print("\n--- Final Metadata ---")
-        pprint(result.final_metadata)
+    if result.final_output:
+        print("\n--- Final Output ---")
+        pprint(result.final_output)
 
 
 if __name__ == "__main__":

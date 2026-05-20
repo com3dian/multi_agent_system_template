@@ -9,7 +9,9 @@ This module provides the PlanExecutor class that:
 5. Produces the final result
 """
 import logging
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Type
+
+from pydantic import BaseModel
 
 from src.core.schemas import Plan, ExecutionResult, StepResult
 from src.context import ExecutionContext
@@ -50,6 +52,7 @@ class PlanExecutor:
         plan: Plan,
         context: ExecutionContext,
         context_key: str,
+        output_schema: Optional[Type[BaseModel]] = None,
         player_pool: List[str] = None,
     ) -> ExecutionResult:
         """
@@ -83,6 +86,13 @@ class PlanExecutor:
                 logging.info(f"Target resources: {target_resources}")
 
             try:
+                is_final_step = (step_index == len(plan_steps) - 1)
+                step_output_schema = output_schema if is_final_step else None
+                if step_output_schema:
+                    logging.info(
+                        f"  Final step will use structured output: {step_output_schema.__name__}"
+                    )
+                
                 step_state = create_step_state(
                     step_index=step_index,
                     step_dict=step_dict,
@@ -92,6 +102,7 @@ class PlanExecutor:
                     players_per_step=self.topology["players_per_step"],
                     debate_rounds=self.topology["debate_rounds"],
                     player_pool=effective_player_pool,
+                    output_schema=step_output_schema,
                 )
 
                 final_step_state = self.step_graph.invoke(step_state)

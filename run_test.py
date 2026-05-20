@@ -1,37 +1,37 @@
 """
-A simple test script to run the metadata agent with a specified standard.
+A simple test script to run the metadata agent with explicit objectives.
 """
 import os
 
-# --- Using a predefined standard ---
-print("--- Running with 'basic' predefined standard ---")
+# --- Using inline objective ---
+print("--- Running with inline objective ---")
 os.system(
     "python -m src.main "
-    "--dataset-path ./data/test_data.csv "
+    "--source ./data/test_data.csv "
     "--topology fast "
-    "--metadata-standard basic"
+    "--objective \"Analyze this dataset and return key structure + quality findings.\""
 )
 print("\n" * 3)
 
 
-# --- Using a custom standard from a file ---
-custom_standard_content = """
-{
-    "custom_field_1": "...",
-    "custom_field_2": "..."
-}
+# --- Using objective from file ---
+objective_content = """
+Analyze the dataset resources and produce:
+1) schema summary,
+2) row/field-level quality concerns,
+3) recommended next analysis steps.
 """
-custom_standard_path = "./data/custom_standard.json"
-with open(custom_standard_path, "w") as f:
-    f.write(custom_standard_content)
+objective_path = "./data/objective.txt"
+with open(objective_path, "w", encoding="utf-8") as f:
+    f.write(objective_content)
 
-print(f"--- Running with custom standard from file: {custom_standard_path} ---")
+print(f"--- Running with objective from file: {objective_path} ---")
 os.system(
     f"python -m src.main "
-    f"--dataset-path ./data/test_data.csv "
+    f"--source ./data/test_data.csv "
     f"--topology fast "
-    f"--metadata-standard {custom_standard_path}"
+    f"--objective-file {objective_path}"
 )
 
-# Clean up the custom standard file
-os.remove(custom_standard_path)
+# Clean up
+os.remove(objective_path)

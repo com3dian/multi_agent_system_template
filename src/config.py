@@ -85,9 +85,15 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Can be overridden by environment variable: DEFAULT_TOPOLOGY
 DEFAULT_TOPOLOGY = os.getenv("DEFAULT_TOPOLOGY", "default")
 
-# Default metadata standard
-# Can be overridden by environment variable: DEFAULT_METADATA_STANDARD
-DEFAULT_METADATA_STANDARD = os.getenv("DEFAULT_METADATA_STANDARD", "basic")
+# Default planner objective
+# Can be overridden by environment variable: DEFAULT_OBJECTIVE
+DEFAULT_OBJECTIVE = os.getenv(
+    "DEFAULT_OBJECTIVE",
+    (
+        "Analyze the provided resources and generate a structured summary of "
+        "content, schema, and quality observations."
+    ),
+)
 
 
 # =============================================================================
@@ -214,6 +220,6 @@ LLM Model: {model}
 Planning Temperature: {PLANNING_TEMPERATURE}
 Player Temperature: {PLAYER_TEMPERATURE}
 Default Topology: {DEFAULT_TOPOLOGY}
-Default Metadata Standard: {DEFAULT_METADATA_STANDARD}
+Default Objective: {DEFAULT_OBJECTIVE}
 API Key ({api_key_env}): {'Set' if api_key_set else 'Not Set'}
 """

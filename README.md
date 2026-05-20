@@ -14,3 +14,5 @@
 
 </div>
 <br>
+
+This project is under rapid development, and the documentation is not yet mature. For now, implementation guidance can be found in the docstrings and comments in the source code.
